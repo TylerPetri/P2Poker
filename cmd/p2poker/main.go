@@ -195,6 +195,122 @@ func repl(ctx context.Context, n *cluster.Node) {
 			} else {
 				fmt.Println("unknown table")
 			}
+		case "check":
+			// check <tableID>
+			if len(args) < 2 {
+				fmt.Println("usage: check <tableID>")
+				break
+			}
+			id := protocol.TableID(args[1])
+			if t, ok := n.Manager().Get(id); ok {
+				t.ProposeLocal(protocol.Action{ID: protocol.RandActionID(), Type: protocol.ActCheck, PlayerID: string(n.ID)})
+				fmt.Println("check proposed on", id)
+			} else {
+				fmt.Println("unknown table")
+			}
+		case "fold":
+			// fold <tableID>
+			if len(args) < 2 {
+				fmt.Println("usage: fold <tableID>")
+				break
+			}
+			id := protocol.TableID(args[1])
+			if t, ok := n.Manager().Get(id); ok {
+				t.ProposeLocal(protocol.Action{ID: protocol.RandActionID(), Type: protocol.ActFold, PlayerID: string(n.ID)})
+				fmt.Println("fold proposed on", id)
+			} else {
+				fmt.Println("unknown table")
+			}
+		case "call":
+			// call <tableID>
+			if len(args) < 2 {
+				fmt.Println("usage: call <tableID>")
+				break
+			}
+			id := protocol.TableID(args[1])
+			if t, ok := n.Manager().Get(id); ok {
+				t.ProposeLocal(protocol.Action{ID: protocol.RandActionID(), Type: protocol.ActCall, PlayerID: string(n.ID)})
+				fmt.Println("call proposed on", id)
+			} else {
+				fmt.Println("unknown table")
+			}
+		case "raise":
+			// raise <tableID> <amount>
+			if len(args) < 3 {
+				fmt.Println("usage: raise <tableID> <amount>")
+				break
+			}
+			id := protocol.TableID(args[1])
+			amt := mustI64(args[2])
+			if t, ok := n.Manager().Get(id); ok {
+				t.ProposeLocal(protocol.Action{ID: protocol.RandActionID(), Type: protocol.ActRaise, PlayerID: string(n.ID), Amount: amt})
+				fmt.Println("raise proposed:", amt, "on", id)
+			} else {
+				fmt.Println("unknown table")
+			}
+		case "state":
+			// state [-v] <tableID>
+			if len(args) < 2 {
+				fmt.Println("usage: state [-v] <tableID>")
+				break
+			}
+			verbose := false
+			tidIdx := 1
+			if args[1] == "-v" {
+				verbose = true
+				if len(args) < 3 {
+					fmt.Println("usage: state -v <tableID>")
+					break
+				}
+				tidIdx = 2
+			}
+			id := protocol.TableID(args[tidIdx])
+			if t, ok := n.Manager().Get(id); ok {
+				ss := t.Snapshot()
+				fmt.Printf("table=%s epoch=%d seq=%d auth=%s cfg={SB=%d BB=%d}\n",
+					id, ss.Epoch, ss.Seq, ss.Authority, ss.Cfg.SmallBlind, ss.Cfg.BigBlind)
+
+				// Pull live engine summary for nicer view
+				summary := t.Eng().Summary()
+
+				fmt.Printf("phase=%s pot=%d dealer=%s turn=%s\n",
+					summary.Phase, summary.Pot, summary.Dealer, summary.Turn)
+
+				if verbose {
+					fmt.Println("seats:")
+					for _, sv := range summary.Seats {
+						marks := ""
+						if sv.Player == summary.Turn {
+							marks += " ←turn"
+						}
+						if sv.Player == summary.Dealer {
+							if marks != "" {
+								marks += ", "
+							}
+							marks += "dealer"
+						}
+						flags := ""
+						if sv.Folded {
+							flags += " folded"
+						}
+						if sv.AllIn {
+							flags += " all-in"
+						}
+						if sv.InHand && !sv.Folded {
+							flags += " in-hand"
+						}
+						if flags != "" {
+							flags = " [" + strings.TrimSpace(flags) + "]"
+						}
+						fmt.Printf(" - %s stack=%d committed=%d%s%s\n",
+							sv.Player, sv.Stack, sv.Committed, flags, marks)
+					}
+				} else {
+					fmt.Println("(use 'state -v <tableID>' for stacks/flags)")
+				}
+			} else {
+				fmt.Println("unknown table")
+			}
 		case "start":
 			if len(args) < 2 {
 				fmt.Println("usage: start <tableID>")
@@ -280,6 +396,11 @@ func printHelp() {
 	leave <tableID>
 	kick <tableID> <playerNodeID>
   bet <tableID> <amount>
+	check <tableID>
+  fold <tableID>
+	call <tableID>
+  raise <tableID> <amount>
+  state <tableID>
   start <tableID>
   advance <tableID>
   snapshot <tableID>

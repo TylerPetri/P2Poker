@@ -3,6 +3,7 @@ package table
 import (
 	"time"
 
+	"p2poker/internal/engine"
 	"p2poker/internal/protocol"
 	"p2poker/pkg/types"
 )
@@ -33,8 +34,7 @@ type Table struct {
 	followers   map[protocol.NodeID]struct{}
 	authorityID protocol.NodeID
 
-	// game state (minimal placeholder; will be owned by engine later)
-	state gameState
+	eng engine.State
 
 	// timers
 	lastHeartbeat time.Time
@@ -67,7 +67,7 @@ func New(
 			}
 			return ""
 		}(),
-		state:         gameState{Players: []string{}, DealerIdx: 0, Pot: 0, Phase: "preflop"},
+		eng:           engine.NewState(cfg.SmallBlind, cfg.BigBlind),
 		lastHeartbeat: time.Now(),
 	}
 }
@@ -76,6 +76,7 @@ func (t *Table) ID() protocol.TableID         { return t.id }
 func (t *Table) IsAuthority() bool            { return t.authority }
 func (t *Table) Epoch() protocol.Epoch        { return t.epoch }
 func (t *Table) AuthorityID() protocol.NodeID { return t.authorityID }
+func (t *Table) Eng() *engine.State           { return &t.eng }
 
 // Run drives the event loop. When authority, it emits heartbeats.
 func (t *Table) Run() {

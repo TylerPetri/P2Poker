@@ -1,6 +1,15 @@
 package table
 
-import "time"
+import (
+	"hash/fnv"
+	"time"
+)
+
+func seedFromActionID(id string) int64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(id))
+	return int64(h.Sum64())
+}
 
 func contains(ss []string, x string) bool {
 	for _, s := range ss {
