@@ -1,4 +1,5 @@
 # p2p-poker (ongoing)
 
-
-Invite your friends, your cult *cough*... business men speak at golf courses... maybe it's a rainy day and need a peer-to-peer fun game to play?
+## Usage so far
+- terminal 1: `make run`
+- terminal 2: `make peer PORT=7778` (default = 7777)
