@@ -83,6 +83,7 @@ func (s *State) StartHand(r *rand.Rand) error {
 	s.Phase = PhasePreflop
 	// set round state
 	s.CurrentBet = s.BigBlind
+	s.LastRaiseSize = s.BigBlind
 	s.ActorsToAct = s.countNeedToAct()
 	// shuffle new deck (placeholder; no hole cards dealt here yet)
 	s.Deck = NewDeck(r)
@@ -182,17 +183,17 @@ func (s *State) resetCommittedAndSetTurnFromDealer() {
 	for _, seat := range s.Seats {
 		seat.Committed = 0
 	}
-	// if nobody is seated, avoid modulo-by-zero and consider the round closed
 	if len(s.Order) == 0 {
 		s.TurnIdx = 0
 		s.CurrentBet = 0
+		s.LastRaiseSize = s.BigBlind
 		s.ActorsToAct = 0
 		return
 	}
-	// after each street, first to act is left of dealer
 	first := (s.DealerIdx + 1) % len(s.Order)
 	s.TurnIdx = first
 	s.CurrentBet = 0
+	s.LastRaiseSize = s.BigBlind
 	s.ActorsToAct = s.countNeedToAct()
 }
 
@@ -276,25 +277,26 @@ func (s *State) Bet(p PlayerID, amt int64) error {
 	if err := s.ensureTurn(p); err != nil {
 		return err
 	}
+	if s.CurrentBet > 0 {
+		return errors.New("cannot bet; a bet already exists (use raise)")
+	}
+	if amt < s.BigBlind {
+		return errors.New("bet must be at least the big blind")
+	}
 	if amt <= 0 {
 		return errors.New("bet must be > 0")
 	}
-
-	// If there is already a bet, interpret as Raise
-	if s.CurrentBet > 0 {
-		return s.Raise(p, amt)
-	}
-
 	if st.Stack < amt {
 		return ErrInsufficient
 	}
+
 	st.Stack -= amt
 	st.Committed += amt
 	s.Pot += amt
 
-	// New current bet is the bettor's committed amount
 	s.CurrentBet = st.Committed
-	s.ActorsToAct = s.countNeedToAct() // everyone else must respond
+	s.LastRaiseSize = amt
+	s.ActorsToAct = s.countNeedToAct()
 	s.advanceTurn()
 	return nil
 }
@@ -344,17 +346,34 @@ func (s *State) Call(p PlayerID) error {
 	if s.CurrentBet == 0 {
 		return errors.New("nothing to call")
 	}
+
 	need := s.CurrentBet - st.Committed
 	if need <= 0 {
 		return errors.New("already matched")
 	}
-	if need > st.Stack {
+
+	// Full call
+	if st.Stack >= need {
+		st.Stack -= need
+		st.Committed += need
+		s.Pot += need
+		s.ActorsToAct-- // this actor has acted
+		s.advanceTurn()
+		return nil
+	}
+
+	// Short all-in call (for less than needed)
+	// Does NOT change CurrentBet or LastRaiseSize and does NOT reopen action.
+	allin := st.Stack
+	if allin <= 0 {
 		return ErrInsufficient
 	}
-	st.Stack -= need
-	st.Committed += need
-	s.Pot += need
-	s.ActorsToAct--
+	st.Stack = 0
+	st.AllIn = true
+	st.Committed += allin
+	s.Pot += allin
+
+	s.ActorsToAct-- // they acted this street
 	s.advanceTurn()
 	return nil
 }
@@ -367,36 +386,84 @@ func (s *State) Raise(p PlayerID, add int64) error {
 	if err := s.ensureTurn(p); err != nil {
 		return err
 	}
+	if s.CurrentBet == 0 {
+		return errors.New("nothing to raise (use bet)")
+	}
 	if add <= 0 {
 		return errors.New("raise must be > 0")
 	}
 
-	// First, call up to CurrentBet if needed
+	// How much to call first?
 	need := int64(0)
 	if st.Committed < s.CurrentBet {
 		need = s.CurrentBet - st.Committed
 	}
 	total := need + add
+
+	// FULL RAISE path: meets min-raise and player can cover
+	if add >= s.LastRaiseSize && st.Stack >= total {
+		// pay call part (if behind)
+		if need > 0 {
+			st.Stack -= need
+			st.Committed += need
+			s.Pot += need
+		}
+		// pay raise part
+		st.Stack -= add
+		st.Committed += add
+		s.Pot += add
+
+		s.CurrentBet = st.Committed        // new bar
+		s.LastRaiseSize = add              // min-raise updates
+		s.ActorsToAct = s.countNeedToAct() // everyone else must respond
+		s.advanceTurn()
+		return nil
+	}
+
+	// SHORT ALL-IN raise path:
+	// - allow if it's exactly all-in (stack < total), even if add < LastRaiseSize
+	// - does NOT reopen action:
+	//     • do NOT change CurrentBet or LastRaiseSize
+	//     • only this actor is removed from "to act" (if they were behind)
 	if st.Stack < total {
-		return ErrInsufficient
+		// call what you can up to CurrentBet first
+		callPart := min64(st.Stack, need)
+		if callPart > 0 {
+			st.Stack -= callPart
+			st.Committed += callPart
+			s.Pot += callPart
+		}
+		// whatever remains is the raise-by portion (below min-raise), shove it
+		remain := st.Stack
+		if remain <= 0 {
+			// couldn't even call anything; still a shove for 0 shouldn't happen,
+			// but keep safety:
+			return ErrInsufficient
+		}
+		st.Stack = 0
+		st.AllIn = true
+		st.Committed += remain
+		s.Pot += remain
+
+		// This actor has acted this street. We DO NOT reset ActorsToAct,
+		// we DO NOT change CurrentBet/LastRaiseSize (no reopen).
+		if st.Committed-remain < s.CurrentBet { // were they behind before?
+			s.ActorsToAct--
+		} else if need > 0 { // conservative decrement if they were behind
+			s.ActorsToAct--
+		}
+		s.advanceTurn()
+		return nil
 	}
 
-	// Pay call portion
-	if need > 0 {
-		st.Stack -= need
-		st.Committed += need
-		s.Pot += need
+	// Not all-in and below min-raise -> reject
+	if add < s.LastRaiseSize {
+		return errors.New("raise too small (below min-raise)")
 	}
-	// Pay raise portion
-	st.Stack -= add
-	st.Committed += add
-	s.Pot += add
 
-	// New bar and reset responders
-	s.CurrentBet = st.Committed
-	s.ActorsToAct = s.countNeedToAct() // everyone else behind must respond
-	s.advanceTurn()
-	return nil
+	// Reaching here means st.Stack >= total but we didn't hit full-raise clause,
+	// which shouldn't happen; treat as full raise for safety.
+	return s.Raise(p, add)
 }
 
 func (s *State) advanceTurn() {
@@ -412,4 +479,11 @@ func (s *State) advanceTurn() {
 		}
 	}
 	// if no eligible player found, do nothing (round will be advanced by outer logic)
+}
+
+func min64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
 }

@@ -77,19 +77,20 @@ type Seat struct {
 
 // Live state with game logic
 type State struct {
-	SmallBlind  int64
-	BigBlind    int64
-	DealerIdx   int
-	Order       []PlayerID
-	TurnIdx     int
-	Phase       Phase
-	Pot         int64
-	Seats       map[PlayerID]*Seat
-	Deck        []Card
-	Board       []Card
-	CurrentBet  int64 // highest committed in this round
-	ActorsToAct int   // # eligible players who still must act this street
-	HandActive  bool  // true between StartHand() and end of hand
+	SmallBlind    int64
+	BigBlind      int64
+	DealerIdx     int
+	Order         []PlayerID
+	TurnIdx       int
+	Phase         Phase
+	Pot           int64
+	Seats         map[PlayerID]*Seat
+	Deck          []Card
+	Board         []Card
+	CurrentBet    int64 // highest committed in this round
+	ActorsToAct   int   // # eligible players who still must act this street
+	LastRaiseSize int64 // size of last raise increment (open counts as a raise from 0)
+	HandActive    bool  // true between StartHand() and end of hand
 }
 
 // Serializable struct for network/discovery

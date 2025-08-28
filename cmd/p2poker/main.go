@@ -1,6 +1,3 @@
-// ─────────────────────────────────────────────────────────────
-// file: cmd/p2poker/main.go (updated with discover + epoch command)
-// ─────────────────────────────────────────────────────────────
 package main
 
 import (
@@ -289,6 +286,7 @@ func repl(ctx context.Context, n *cluster.Node) {
 							}
 							marks += "dealer"
 						}
+
 						flags := ""
 						if sv.Folded {
 							flags += " folded"
@@ -302,6 +300,7 @@ func repl(ctx context.Context, n *cluster.Node) {
 						if flags != "" {
 							flags = " [" + strings.TrimSpace(flags) + "]"
 						}
+
 						fmt.Printf(" - %s stack=%d committed=%d%s%s\n",
 							sv.Player, sv.Stack, sv.Committed, flags, marks)
 					}

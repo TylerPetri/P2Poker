@@ -1,12 +1,33 @@
 package table
 
 import (
+	"errors"
 	"log"
 	"math/rand"
 
 	"p2poker/internal/engine"
 	"p2poker/internal/protocol"
 )
+
+func allInTag(s *engine.State, pid string) string {
+	if pid == "" {
+		return ""
+	}
+	if st, ok := s.Seats[pid]; ok && (st.AllIn || st.Stack == 0) {
+		return " (all-in)"
+	}
+	return ""
+}
+
+func dealerTag(s *engine.State, pid string) string {
+	if pid == "" || len(s.Order) == 0 {
+		return ""
+	}
+	if pid == s.Order[s.DealerIdx] {
+		return " (dealer)"
+	}
+	return ""
+}
 
 func (t *Table) apply(a protocol.Action) {
 	var err error
@@ -46,10 +67,6 @@ func (t *Table) apply(a protocol.Action) {
 		announceStart = err == nil
 		announceTurn = err == nil
 
-	case protocol.ActBet:
-		err = t.eng.Bet(a.PlayerID, a.Amount)
-		announceTurn = err == nil
-
 	case protocol.ActCheck:
 		err = t.eng.Check(a.PlayerID)
 		announceTurn = err == nil
@@ -60,11 +77,53 @@ func (t *Table) apply(a protocol.Action) {
 
 	case protocol.ActCall:
 		err = t.eng.Call(a.PlayerID)
-		announceTurn = err == nil
 
 	case protocol.ActRaise:
-		err = t.eng.Raise(a.PlayerID, a.Amount)
-		announceTurn = err == nil
+		st, ok := t.eng.Seats[a.PlayerID]
+		if !ok {
+			err = errors.New("unknown player")
+			break
+		}
+		current := t.eng.CurrentBet
+		committed := st.Committed
+		to := a.Amount
+
+		if to <= current {
+			err = t.eng.Call(a.PlayerID)
+			break
+		}
+
+		additional := to - committed
+		if additional <= 0 {
+			break
+		}
+
+		needCall := int64(0)
+		if committed < current {
+			needCall = current - committed
+		}
+
+		raiseBy := additional - needCall
+		if raiseBy <= 0 {
+			err = t.eng.Call(a.PlayerID)
+		} else {
+			err = t.eng.Raise(a.PlayerID, raiseBy)
+		}
+
+	case protocol.ActBet:
+		if t.eng.CurrentBet == 0 {
+			err = t.eng.Bet(a.PlayerID, a.Amount)
+		} else {
+			ra := protocol.Action{
+				ID:       a.ID,
+				Type:     protocol.ActRaise,
+				PlayerID: a.PlayerID,
+				Amount:   a.Amount,
+				Meta:     a.Meta,
+			}
+			t.apply(ra)
+			return
+		}
 
 	case protocol.ActAdvance:
 		t.eng.AdvancePhase()
@@ -78,17 +137,29 @@ func (t *Table) apply(a protocol.Action) {
 	}
 
 	if announceStart {
-		log.Printf("table %s: hand started (SB=%d, BB=%d), dealer=%s",
-			t.id, t.cfg.SmallBlind, t.cfg.BigBlind, dealerOf(&t.eng))
+		cur := t.eng.CurrentPlayer()
+		dealer := dealerOf(&t.eng)
+		log.Printf("table %s: hand started (SB=%d, BB=%d), dealer=%s%s, turn=%s%s%s",
+			t.id, t.cfg.SmallBlind, t.cfg.BigBlind,
+			dealer, dealerTag(&t.eng, dealer),
+			cur, allInTag(&t.eng, cur), dealerTag(&t.eng, cur),
+		)
 	}
 
 	if announcePhase {
-		log.Printf("table %s: phase advanced to %s", t.id, t.eng.Phase.String())
+		cur := t.eng.CurrentPlayer()
+		log.Printf("table %s: phase advanced to %s, turn=%s%s%s",
+			t.id, (&t.eng).Phase.String(),
+			cur, allInTag(&t.eng, cur), dealerTag(&t.eng, cur),
+		)
 	}
 
 	if announceTurn {
-		log.Printf("table %s: phase=%s pot=%d turn=%s",
-			t.id, t.eng.Phase.String(), t.eng.Pot, t.eng.CurrentPlayer())
+		cur := t.eng.CurrentPlayer()
+		log.Printf("table %s: phase=%s pot=%d turn=%s%s%s",
+			t.id, (&t.eng).Phase.String(), (&t.eng).Pot,
+			cur, allInTag(&t.eng, cur), dealerTag(&t.eng, cur),
+		)
 	}
 
 	if t.authority && t.eng.HandActive && t.eng.RoundClosed() && a.Type != protocol.ActAdvance {
