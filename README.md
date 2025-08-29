@@ -1,4 +1,4 @@
-# p2p-poker (ongoing - party niiiiiight)
+# p2p-poker (ongoing - party niiiiiight - omg another WOOOOOOOOOO)
 
 ## Usage so far
 - terminal 1: 
