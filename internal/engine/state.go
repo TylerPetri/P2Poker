@@ -25,6 +25,7 @@ func NewState(sb, bb int64) State {
 		Deck:       nil,
 		Board:      nil,
 		HandActive: false,
+		Holes:      make(map[PlayerID][]Card),
 	}
 }
 
@@ -40,6 +41,7 @@ func (s *State) Sit(p PlayerID, buyin int64) error {
 
 func (s *State) Leave(p PlayerID) {
 	delete(s.Seats, p)
+	delete(s.Holes, p)
 	// remove from order
 	out := s.Order[:0]
 	for _, id := range s.Order {
@@ -85,9 +87,21 @@ func (s *State) StartHand(r *rand.Rand) error {
 	s.CurrentBet = s.BigBlind
 	s.LastRaiseSize = s.BigBlind
 	s.ActorsToAct = s.countNeedToAct()
-	// shuffle new deck (placeholder; no hole cards dealt here yet)
+	// shuffle new deck
 	s.Deck = NewDeck(r)
 	s.Board = s.Board[:0]
+	// clear + deal hole cards (2 per active player, in seat order)
+	s.Holes = make(map[PlayerID][]Card, len(s.Seats))
+	for _, pid := range s.Order {
+		st := s.Seats[pid]
+		if st.InHand && !st.Folded {
+			if len(s.Deck) < 2 {
+				return errors.New("deck underflow dealing holes")
+			}
+			s.Holes[pid] = []Card{s.Deck[0], s.Deck[1]}
+			s.Deck = s.Deck[2:]
+		}
+	}
 	return nil
 }
 
@@ -308,6 +322,12 @@ func (s *State) Check(p PlayerID) error {
 	}
 	if err := s.ensureTurn(p); err != nil {
 		return err
+	}
+	// If there is no live bet this street, checking is always allowed.
+	if s.CurrentBet == 0 {
+		s.ActorsToAct--
+		s.advanceTurn()
+		return nil
 	}
 	// Can only check if you're already matched to CurrentBet
 	if st.Committed != s.CurrentBet {

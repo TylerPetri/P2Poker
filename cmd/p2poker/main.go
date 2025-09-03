@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"p2poker/internal/cluster"
+	"p2poker/internal/engine"
 	"p2poker/internal/netx"
 	"p2poker/internal/protocol"
 	"p2poker/pkg/types"
@@ -179,6 +180,24 @@ func repl(ctx context.Context, n *cluster.Node) {
 			} else {
 				fmt.Println("unknown table")
 			}
+		case "hole":
+			// hole <tableID>
+			if len(args) < 2 {
+				fmt.Println("usage: hole <tableID>")
+				break
+			}
+			id := protocol.TableID(args[1])
+			if t, ok := n.Manager().Get(id); ok {
+				// access engine
+				s := t.Eng()
+				if hc, ok := s.Holes[string(n.ID)]; ok && len(hc) == 2 {
+					fmt.Printf("your hole cards: %s %s\n", hc[0].String(), hc[1].String())
+				} else {
+					fmt.Println("no hole cards yet (did you start a hand?)")
+				}
+			} else {
+				fmt.Println("unknown table")
+			}
 		case "bet":
 			if len(args) < 3 {
 				fmt.Println("usage: bet <tableID> <amount>")
@@ -322,6 +341,51 @@ func repl(ctx context.Context, n *cluster.Node) {
 			} else {
 				fmt.Println("unknown table")
 			}
+		case "board":
+			// board <tableID>
+			if len(args) < 2 {
+				fmt.Println("usage: board <tableID>")
+				break
+			}
+			id := protocol.TableID(args[1])
+			if t, ok := n.Manager().Get(id); ok {
+				s := t.Eng()
+				b := s.Board
+				var flop, turn, river string
+				if len(b) >= 3 {
+					flop = fmt.Sprintf("%s %s %s", b[0].String(), b[1].String(), b[2].String())
+				}
+				if len(b) >= 4 {
+					turn = b[3].String()
+				}
+				if len(b) >= 5 {
+					river = b[4].String()
+				}
+
+				switch s.Phase {
+				case engine.PhasePreflop:
+					fmt.Println("Board: (preflop) — no community cards yet")
+				case engine.PhaseFlop:
+					fmt.Printf("Board: [flop] %s\n", flop)
+				case engine.PhaseTurn:
+					fmt.Printf("Board: [flop] %s  |  [turn] %s\n", flop, turn)
+				case engine.PhaseRiver, engine.PhaseShowdown:
+					fmt.Printf("Board: [flop] %s  |  [turn] %s  |  [river] %s\n", flop, turn, river)
+				default:
+					// fallback if somehow out of band
+					if len(b) == 0 {
+						fmt.Println("Board: (empty)")
+					} else if len(b) <= 3 {
+						fmt.Printf("Board: %s\n", flop)
+					} else if len(b) == 4 {
+						fmt.Printf("Board: %s  |  %s\n", flop, turn)
+					} else {
+						fmt.Printf("Board: %s  |  %s  |  %s\n", flop, turn, river)
+					}
+				}
+			} else {
+				fmt.Println("unknown table")
+			}
 		case "advance":
 			if len(args) < 2 {
 				fmt.Println("usage: advance <tableID>")
@@ -394,6 +458,7 @@ func printHelp() {
   join <tableID>
 	leave <tableID>
 	kick <tableID> <playerNodeID>
+	hole <tableID>
   bet <tableID> <amount>
 	check <tableID>
   fold <tableID>
@@ -401,6 +466,7 @@ func printHelp() {
   raise <tableID> <amount>
   state <tableID>
   start <tableID>
+	board <tableID>
   advance <tableID>
   snapshot <tableID>
   epoch <tableID>

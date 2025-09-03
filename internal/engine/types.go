@@ -6,11 +6,51 @@ import (
 
 type Suit byte
 
+const (
+	SuitClubs Suit = iota
+	SuitDiamonds
+	SuitHearts
+	SuitSpades
+)
+
 type Rank byte
+
+const (
+	RankTwo Rank = iota + 2
+	RankThree
+	RankFour
+	RankFive
+	RankSix
+	RankSeven
+	RankEight
+	RankNine
+	RankTen
+	RankJack
+	RankQueen
+	RankKing
+	RankAce
+)
 
 type Card struct {
 	Rank Rank
 	Suit Suit
+}
+
+func (c Card) String() string {
+	ranks := map[Rank]string{
+		RankTwo: "2", RankThree: "3", RankFour: "4", RankFive: "5", RankSix: "6",
+		RankSeven: "7", RankEight: "8", RankNine: "9", RankTen: "T",
+		RankJack: "J", RankQueen: "Q", RankKing: "K", RankAce: "A",
+	}
+	suits := map[Suit]string{
+		SuitClubs: "♣", SuitDiamonds: "♦", SuitHearts: "♥", SuitSpades: "♠",
+	}
+	r, ok1 := ranks[c.Rank]
+	s, ok2 := suits[c.Suit]
+	if !ok1 || !ok2 {
+		return "??"
+	}
+	return r + s
 }
 
 type Phase int
@@ -40,29 +80,6 @@ func (p Phase) String() string {
 	}
 }
 
-const (
-	SuitClubs Suit = iota
-	SuitDiamonds
-	SuitHearts
-	SuitSpades
-)
-
-const (
-	RankTwo Rank = 2
-	RankThree
-	RankFour
-	RankFive
-	RankSix
-	RankSeven
-	RankEight
-	RankNine
-	RankTen
-	RankJack
-	RankQueen
-	RankKing
-	RankAce
-)
-
 // PlayerID is a stable identifier (e.g. NodeID string)
 type PlayerID = string
 
@@ -87,6 +104,7 @@ type State struct {
 	Seats         map[PlayerID]*Seat
 	Deck          []Card
 	Board         []Card
+	Holes         map[PlayerID][]Card
 	CurrentBet    int64 // highest committed in this round
 	ActorsToAct   int   // # eligible players who still must act this street
 	LastRaiseSize int64 // size of last raise increment (open counts as a raise from 0)

@@ -67,6 +67,13 @@ func (t *Table) apply(a protocol.Action) {
 		announceStart = err == nil
 		announceTurn = err == nil
 
+		if err == nil {
+			// Local-only: show my hole cards (not broadcast; every node prints its own)
+			if hc, ok := t.eng.Holes[string(t.self)]; ok && len(hc) == 2 {
+				log.Printf("table %s: your hole cards: %s %s", t.id, hc[0].String(), hc[1].String())
+			}
+		}
+
 	case protocol.ActCheck:
 		err = t.eng.Check(a.PlayerID)
 		announceTurn = err == nil
