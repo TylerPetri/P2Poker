@@ -14,6 +14,7 @@ const (
 	ActFold        ActionType = "FOLD"
 	ActKick        ActionType = "KICK"
 	ActAdvance     ActionType = "ADVANCE_PHASE"
+	ActShowdown    ActionType = "SHOWDOWN"
 )
 
 type Action struct {

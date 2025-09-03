@@ -398,6 +398,25 @@ func repl(ctx context.Context, n *cluster.Node) {
 			} else {
 				fmt.Println("unknown table")
 			}
+		case "showdown":
+			// showdown <tableID>  (authority-only shortcut, debugging)
+			if len(args) < 2 {
+				fmt.Println("usage: showdown <tableID>")
+				break
+			}
+			id := protocol.TableID(args[1])
+			if t, ok := n.Manager().Get(id); ok {
+				ss := t.Snapshot()
+				if ss.Authority != n.ID {
+					fmt.Println("you are not the authority; cannot showdown")
+					break
+				}
+				t.ProposeLocal(protocol.Action{ID: protocol.RandActionID(), Type: protocol.ActShowdown, PlayerID: string(n.ID)})
+				fmt.Println("showdown proposed on", id)
+			} else {
+				fmt.Println("unknown table")
+			}
+
 		case "snapshot":
 			if len(args) < 2 {
 				fmt.Println("usage: snapshot <tableID>")
@@ -468,6 +487,7 @@ func printHelp() {
   start <tableID>
 	board <tableID>
   advance <tableID>
+	showdown <tableID>
   snapshot <tableID>
   epoch <tableID>
   addpeer <addr>

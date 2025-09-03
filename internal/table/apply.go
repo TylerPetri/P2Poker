@@ -2,6 +2,7 @@ package table
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"math/rand"
 
@@ -136,6 +137,33 @@ func (t *Table) apply(a protocol.Action) {
 		t.eng.AdvancePhase()
 		announcePhase = true
 		announceTurn = true
+
+		// If we just moved into showdown, resolve immediately (authority only)
+		if t.authority && (&t.eng).Phase == engine.PhaseShowdown {
+			sh := protocol.Action{
+				ID:       protocol.RandActionID(),
+				Type:     protocol.ActShowdown,
+				PlayerID: string(t.self),
+			}
+			t.commitAndBroadcast(sh)
+			// No need to announceTurn after showdown.
+			announceTurn = false
+		}
+
+	case protocol.ActShowdown:
+		// Resolve payouts & end hand
+		sum := (&t.eng).ResolveShowdown()
+		if len(sum.Winners) == 0 {
+			log.Printf("table %s: showdown: no eligible winners; pot carried was 0", t.id)
+		} else {
+			// Log winners (could be multiple on a tie)
+			for _, w := range sum.Winners {
+				// Pretty print 5-card hand
+				cards := fmt.Sprintf("%s %s %s %s %s", w.Cards[0].String(), w.Cards[1].String(), w.Cards[2].String(), w.Cards[3].String(), w.Cards[4].String())
+				log.Printf("table %s: winner %s — %s [%v] +%d",
+					t.id, w.Player, w.Value.Cat.String(), cards, sum.PayoutPer)
+			}
+		}
 	}
 
 	if err != nil {
